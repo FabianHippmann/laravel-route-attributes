@@ -7,6 +7,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use ReflectionAttribute;
 use ReflectionClass;
+use ReflectionMethod;
 use Spatie\RouteAttributes\Attributes\Defaults;
 use Spatie\RouteAttributes\Attributes\Fallback;
 use Spatie\RouteAttributes\Attributes\Route;
@@ -135,46 +136,51 @@ class RouteRegistrar
         ], $this->getRoutes($class, $classRouteAttributes));
     }
 
+    protected function registerAttribute(ReflectionClass $class, ClassRouteAttributes $classRouteAttributes, ReflectionMethod|ReflectionClass $method){
+        list($attributes, $wheresAttributes, $defaultAttributes, $fallbackAttributes, $scopeBindingsAttribute) = $this->getAttributesForReflector($method);
+
+
+        foreach ($attributes as $attribute) {
+            try {
+                $attributeClass = $attribute->newInstance();
+            } catch (Throwable) {
+                continue;
+            }
+
+            if (! $attributeClass instanceof Route) {
+                continue;
+            }
+
+
+            list($httpMethods, $action) = $this->getHTTPMethodsAndAction($attributeClass, $method, $class);
+
+
+            $route = $this->router->addRoute($httpMethods, $attributeClass->uri, $action)->name($attributeClass->name);
+
+
+            $this->setScopeBindingsIfAvailable($scopeBindingsAttribute, $route, $classRouteAttributes);
+
+
+            $this->setWheresIfAvailable($classRouteAttributes, $wheresAttributes, $route);
+
+
+            $this->setDefaultsIfAvailable($classRouteAttributes, $defaultAttributes, $route);
+
+
+            $this->addMiddlewareToRoute($classRouteAttributes, $attributeClass, $route);
+
+
+            if (count($fallbackAttributes) > 0) {
+                $route->fallback();
+            }
+        }
+    }
     protected function registerRoutes(ReflectionClass $class, ClassRouteAttributes $classRouteAttributes): void
     {
+        $this->registerAttribute($class, $classRouteAttributes, $class);
+
         foreach ($class->getMethods() as $method) {
-            list($attributes, $wheresAttributes, $defaultAttributes, $fallbackAttributes, $scopeBindingsAttribute) = $this->getAttributesForTheMethod($method);
-
-
-            foreach ($attributes as $attribute) {
-                try {
-                    $attributeClass = $attribute->newInstance();
-                } catch (Throwable) {
-                    continue;
-                }
-
-                if (! $attributeClass instanceof Route) {
-                    continue;
-                }
-
-
-                list($httpMethods, $action) = $this->getHTTPMethodsAndAction($attributeClass, $method, $class);
-
-
-                $route = $this->router->addRoute($httpMethods, $attributeClass->uri, $action)->name($attributeClass->name);
-
-
-                $this->setScopeBindingsIfAvailable($scopeBindingsAttribute, $route, $classRouteAttributes);
-
-
-                $this->setWheresIfAvailable($classRouteAttributes, $wheresAttributes, $route);
-
-
-                $this->setDefaultsIfAvailable($classRouteAttributes, $defaultAttributes, $route);
-
-
-                $this->addMiddlewareToRoute($classRouteAttributes, $attributeClass, $route);
-
-
-                if (count($fallbackAttributes) > 0) {
-                    $route->fallback();
-                }
-            }
+            $this->registerAttribute($class, $classRouteAttributes, $method);
         }
     }
 
@@ -198,16 +204,16 @@ class RouteRegistrar
     }
 
     /**
-     * @param \ReflectionMethod $method
+     * @param \ReflectionMethod $reflector
      * @return array
      */
-    public function getAttributesForTheMethod(\ReflectionMethod $method): array
+    public function getAttributesForReflector(\ReflectionClass|\ReflectionMethod $reflector): array
     {
-        $attributes = $method->getAttributes(RouteAttribute::class, ReflectionAttribute::IS_INSTANCEOF);
-        $wheresAttributes = $method->getAttributes(WhereAttribute::class, ReflectionAttribute::IS_INSTANCEOF);
-        $defaultAttributes = $method->getAttributes(Defaults::class, ReflectionAttribute::IS_INSTANCEOF);
-        $fallbackAttributes = $method->getAttributes(Fallback::class, ReflectionAttribute::IS_INSTANCEOF);
-        $scopeBindingsAttribute = $method->getAttributes(ScopeBindings::class, ReflectionAttribute::IS_INSTANCEOF)[0] ?? null;
+        $attributes = $reflector->getAttributes(RouteAttribute::class, ReflectionAttribute::IS_INSTANCEOF);
+        $wheresAttributes = $reflector->getAttributes(WhereAttribute::class, ReflectionAttribute::IS_INSTANCEOF);
+        $defaultAttributes = $reflector->getAttributes(Defaults::class, ReflectionAttribute::IS_INSTANCEOF);
+        $fallbackAttributes = $reflector->getAttributes(Fallback::class, ReflectionAttribute::IS_INSTANCEOF);
+        $scopeBindingsAttribute = $reflector->getAttributes(ScopeBindings::class, ReflectionAttribute::IS_INSTANCEOF)[0] ?? null;
 
         return [$attributes, $wheresAttributes, $defaultAttributes, $fallbackAttributes, $scopeBindingsAttribute];
     }
@@ -236,10 +242,16 @@ class RouteRegistrar
      * @param ReflectionClass $class
      * @return array
      */
-    public function getHTTPMethodsAndAction(Route $attributeClass, \ReflectionMethod $method, ReflectionClass $class): array
+    public function getHTTPMethodsAndAction(Route $attributeClass, \ReflectionMethod|ReflectionClass $method, ReflectionClass $class): array
     {
         $httpMethods = $attributeClass->methods;
-        $action = $method->getName() === '__invoke' ? $class->getName() : [$class->getName(), $method->getName()];
+        $isSingleAction = $method instanceof ReflectionClass;
+
+        if($isSingleAction){
+            $action = $class->getName();
+        } else {
+            $action = $method->getName() === '__invoke' ? $class->getName() : [$class->getName(), $method->getName()];
+        }
 
         return [$httpMethods, $action];
     }

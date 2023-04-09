@@ -6,6 +6,7 @@ use Spatie\RouteAttributes\Tests\TestClasses\Controllers\RouteRegistrar\Registra
 use Spatie\RouteAttributes\Tests\TestClasses\Controllers\RouteRegistrar\RegistrarTestSecondController;
 use Spatie\RouteAttributes\Tests\TestClasses\Controllers\RouteRegistrar\SubDirectory\RegistrarTestControllerInSubDirectory;
 use Spatie\RouteAttributes\Tests\TestClasses\Middleware\AnotherTestMiddleware;
+use Spatie\RouteAttributes\Tests\TestClasses\Controllers\RouteAttribute\SingleActionTestController;
 use ThirdParty\Http\Controllers\ThirdPartyController;
 
 class RouteRegistrarTest extends TestCase
@@ -48,7 +49,7 @@ class RouteRegistrarTest extends TestCase
             ->routeRegistrar
             ->registerDirectory($this->getTestPath('TestClasses/Controllers/RouteRegistrar'));
 
-        $this->assertRegisteredRoutesCount(3);
+        $this->assertRegisteredRoutesCount(4);
 
         $this->assertRouteRegistered(
             RegistrarTestFirstController::class,
@@ -63,6 +64,10 @@ class RouteRegistrarTest extends TestCase
         $this->assertRouteRegistered(
             RegistrarTestControllerInSubDirectory::class,
             uri: 'in-sub-directory',
+        );
+        $this->assertRouteRegistered(
+            SingleActionTestController::class,
+            uri: 'my-invokable-singleaction-route',
         );
     }
 
